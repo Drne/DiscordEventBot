@@ -25,7 +25,7 @@ let author = 0
 
 function addConfirmReactions(msg) {
   return msg.react('✅')
-        .then(() => msg.react('❌'))
+    .then(() => msg.react('❌'))
 }
 
 function waitForConfirmation(msg) {
@@ -36,30 +36,61 @@ function waitForConfirmation(msg) {
   return msg.awaitReactions(filter, { max: 1, time: 60000, errors: ['time'] })
 }
 
+function getEventMessage(eventDetails) {
+  dateStr =  eventDetails.startdate.toLocaleDateString('en-US', { timeZone: 'America/New_York' })
+
+  timeStr = eventDetails.startdate.toLocaleTimeString('en-US', { timeZone: 'America/New_York' })
+  return 'New Event: ' + 
+          eventDetails.subject + 
+          ' at ' + 
+          dateStr + 
+          ' ' + 
+          timeStr +
+          '\nReact for reminders!'
+}
+
+function getConfirmMessage(eventDetails) {
+  dateStr =  eventDetails.startdate.toLocaleDateString('en-US', { timeZone: 'America/New_York' })
+
+  timeStr = eventDetails.startdate.toLocaleTimeString('en-US', { timeZone: 'America/New_York' })
+
+  return 'Confirm: ' + 
+        eventDetails.subject + 
+        ' at ' + 
+        dateStr + 
+        ' ' + 
+        timeStr + 
+        '?'
+}
+
+function handleConfirmation(eventMsg, reactions, eventDetails) {
+  const reaction = reactions.first();
+  if (reaction.emoji.name === '✅') {
+    eventMessage = getEventMessage(eventDetails)
+    eventMsg.channel
+      .send(getEventMessage(eventDetails))
+      .then((msg) => msg.react('❗'))
+      .then((reactionMessage) => {
+        addEventToDB(reactionMessage.message.id, eventDetails.startdate, eventDetails.subject)
+      })
+  }
+  eventMsg.delete()
+}
+
 client.on('message', msg => {
   if (msg.content.startsWith('/event')) {
     const eventDetails = msg.content.slice(7)
     let appointment = new cally(eventDetails, new Date())
     author = msg.author.id
-    msg.reply('Confirm: ' + appointment.subject + ' at ' + appointment.startdate.toLocaleDateString('en-US', { timeZone: 'America/New_York' }) + ' ' + appointment.startdate.toLocaleTimeString('en-US', { timeZone: 'America/New_York' }) + '?').then(eventMsg => {
+    confirmMessage = getConfirmMessage(appointment)
+    msg.reply(confirmMessage)
+    .then(eventMsg => {
       msg.delete()
       addConfirmReactions(eventMsg)
       .then(() => {
-          const filter = (reaction, user) => {
-            return ['✅', '❌'].includes(reaction.emoji.name) && user.id === author;
-          };
-          eventMsg.awaitReactions(filter, { max: 1, time: 60000, errors: ['time'] })
+          waitForConfirmation(eventMsg)
             .then(collected => {
-              const reaction = collected.first();
-              if (reaction.emoji.name === '✅') {
-                eventMsg.delete()
-                eventMsg.channel.send('New Event: ' + appointment.subject + ' at ' + appointment.startdate.toLocaleDateString('en-US', { timeZone: 'America/New_York' }) + ' ' + appointment.startdate.toLocaleTimeString('en-US', { timeZone: 'America/New_York' }) + '\nReact for reminders!')
-                  .then((msg) => msg.react('❗')).then((reactionMessage) => {
-                    addEventToDB(reactionMessage.message.id, appointment.startdate, appointment.subject)
-                  })
-              } else {
-                eventMsg.delete()
-              }
+              handleConfirmation(eventMsg, collected, appointment)
             })
             .catch(() => {
               eventMsg.delete()
@@ -69,7 +100,7 @@ client.on('message', msg => {
   } else if (msg.content.startsWith('/allEvents')) {
     getAllEvents()
       .then(events => Promise.all(events)
-        .then(events => console.log(events)))
+      .then(events => console.log(events)))
   }
 });
 
